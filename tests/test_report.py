@@ -6,9 +6,10 @@ from arxiv_atlas.report import rank, render, write_csv
 # id -> (relevance, relation, baseline probability); papers not listed are unrelated.
 JUDGEMENTS = {
     "p1": (3.8, "same_problem", 0.9),  # published 2011
-    "p9": (3.6, "same_problem", 0.2),  # published 2019: same level as p1, so it comes first
+    "p9": (3.6, "same_problem", 0.2),  # published 2019: same band as p1, so it comes first
     "p2": (2.4, "resource", 0.1),
-    "p3": (3.1, "unrelated", 0.0),
+    "p3": (3.1, "unrelated", 0.0),  # published 2013: a higher band than p8, so it comes first despite being older
+    "p8": (2.6, "same_problem", 0.1),
     "p4": (1.9, "same_method", 0.8),  # below the default cut-off
 }
 
@@ -29,10 +30,10 @@ async def judge(papers_file, tmp_path, research=RESEARCH):
     return results
 
 
-async def test_rank_orders_by_level_then_newest(papers_file, tmp_path):
+async def test_rank_orders_by_band_then_newest(papers_file, tmp_path):
     ranked, judged = rank(papers_file, await judge(papers_file, tmp_path), RESEARCH)
     assert judged == 20
-    assert [p["id"] for p in ranked] == ["p9", "p1", "p3", "p2"]
+    assert [p["id"] for p in ranked] == ["p9", "p1", "p3", "p8", "p2"]
 
 
 async def test_rank_ignores_results_for_other_research(papers_file, tmp_path):
@@ -44,12 +45,12 @@ async def test_report_groups_and_flags_baselines(papers_file, tmp_path):
     ranked, judged = rank(papers_file, await judge(papers_file, tmp_path), RESEARCH)
     md = render(ranked, judged, RESEARCH, 2.0)
     assert md.startswith("# Related work\n\n> We predict molecular properties")
-    assert "4 of 20 candidates" in md
+    assert "5 of 20 candidates" in md and "newest first within each 0.5-point band" in md
     sections = [line for line in md.splitlines() if line.startswith("## ")]
     assert sections == [
-        "## Most cited (4)",
+        "## Most cited (5)",
         "## Competing approaches to compare against (1)",
-        "## Same problem (2)",
+        "## Same problem (3)",
         "## Datasets, benchmarks, and tools (1)",
         "## Other (1)",
     ]

@@ -1,8 +1,9 @@
-"""Ranked related-work list from judged candidates: most related first, newest first within each level."""
+"""Ranked related-work list from judged candidates: most related first, newest first within each relevance band."""
 
 from __future__ import annotations
 
 import csv
+import math
 from pathlib import Path
 
 from .classify import read_jsonl
@@ -15,6 +16,8 @@ SECTIONS = {
     "background": "Background and surveys",
 }
 BASELINE_P = 0.5
+# Relevance scores cluster between 2 and 3.5, so whole levels would order almost everything by date alone.
+BAND = 0.5
 MOST_CITED = 10
 
 
@@ -33,7 +36,7 @@ def rank(papers_path: Path, results_path: Path, research: str, min_relevance: fl
                 "baseline": answers["baseline"]["noul"],
             }
     ranked = [p for p in judged.values() if p["relevance"] >= min_relevance]
-    ranked.sort(key=lambda p: (round(p["relevance"]), p["published"]), reverse=True)
+    ranked.sort(key=lambda p: (math.floor(p["relevance"] / BAND), p["published"]), reverse=True)
     return ranked, len(judged)
 
 
@@ -53,7 +56,7 @@ def render(ranked: list[dict], judged: int, research: str, min_relevance: float)
         quoted,
         "",
         f"{len(ranked)} of {judged} candidates scored relevance ≥ {min_relevance:g} (0–4). "
-        "Most related first; newest first within each level. Citation counts come from OpenAlex.",
+        f"Most related first; newest first within each {BAND:g}-point band. Citation counts come from OpenAlex.",
     ]
     most_cited = sorted(ranked, key=lambda p: p["cited_by_count"], reverse=True)[:MOST_CITED]
     groups = [
