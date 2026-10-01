@@ -4,6 +4,8 @@ import pytest
 
 from arxiv_atlas.questions import QUESTIONS
 
+RESEARCH = "We predict molecular properties with graph neural networks."
+
 
 def fake_response(paper_id: str, tokens: int = 1000) -> dict:
     """A response shaped like SystemOneResponse.model_dump(mode='json'), deterministic per paper."""
@@ -54,13 +56,12 @@ def papers_file(tmp_path):
                     {
                         "id": f"p{i}",
                         "title": f"p{i}",
-                        "abstract": f"Abstract {i}. Code at https://github.com/x/y" if i % 4 == 0 else f"Abstract {i}.",
+                        "abstract": f"Abstract {i}.",
                         "published": f"{year}-05-01T00:00:00Z",
-                        "primary_category": "cs.LG",
-                        "categories": ["cs.LG"],
-                        "comment": None,
-                        "sample_month": f"{year}05",
-                        "month_total": 100,
+                        "venue": "Sensors",
+                        "cited_by_count": i * 10,
+                        "url": f"https://doi.org/10.1/{i}",
+                        "found_by": "description (semantic)",
                     }
                 )
                 + "\n"
