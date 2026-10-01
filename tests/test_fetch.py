@@ -1,4 +1,5 @@
 import json
+from datetime import date
 
 import httpx
 import pytest
@@ -88,7 +89,15 @@ class FakeAPI:
 
 def test_fetch_candidates_runs_every_search_and_dedupes(tmp_path):
     out, api = tmp_path / "candidates.jsonl", FakeAPI(total=150)
-    n = fetch_candidates(out, "My research.", ["road weather, scene"], per_query=200, api=api, log=lambda *_: None)
+    n = fetch_candidates(
+        out,
+        "My research.",
+        ["road weather, scene"],
+        per_query=200,
+        api=api,
+        log=lambda *_: None,
+        today=date(2026, 9, 30),
+    )
     assert n == 150
     assert [(c.get("search.semantic"), c.get("sort"), c["page"], c["per-page"]) for c in api.calls] == [
         ("My research.", None, 1, 50),
@@ -102,6 +111,7 @@ def test_fetch_candidates_runs_every_search_and_dedupes(tmp_path):
     assert api.calls[2]["filter"] == "title_and_abstract.search:road weather  scene,has_abstract:true"
     rows = [json.loads(line) for line in out.open()]
     assert len(rows) == 150 and rows[0]["found_by"] == "description (semantic)"
+    assert {r["fetched_at"] for r in rows} == {"2026-09-30"}
     assert rows[50]["found_by"] == "'road weather, scene' (keywords, by publication)"
 
 

@@ -22,8 +22,13 @@ MOST_CITED = 10
 
 
 def rank(papers_path: Path, results_path: Path, research: str, min_relevance: float = 2.0) -> tuple[list[dict], int]:
-    """Return (papers at or above `min_relevance`, number judged) for this research description and pack."""
+    """Return (papers at or above `min_relevance`, number judged) for this research description and pack.
+
+    Papers from the latest fetch are marked `is_new` once there has been more than one fetch.
+    """
     papers = {p["id"]: p for p in read_jsonl(papers_path)}
+    fetches = {p.get("fetched_at", "") for p in papers.values()}
+    latest = max(fetches) if len(fetches) > 1 else None
     topic = topic_key(research)
     judged = {}
     for row in read_jsonl(results_path):
@@ -34,6 +39,7 @@ def rank(papers_path: Path, results_path: Path, research: str, min_relevance: fl
                 "relevance": answers["relevance"]["score"],
                 "relation": answers["relation"]["choice"],
                 "baseline": answers["baseline"]["noul"],
+                "is_new": papers[row["id"]].get("fetched_at", "") == latest,
             }
     ranked = [p for p in judged.values() if p["relevance"] >= min_relevance]
     ranked.sort(key=lambda p: (math.floor(p["relevance"] / BAND), p["published"]), reverse=True)
@@ -60,6 +66,7 @@ def render(ranked: list[dict], judged: int, research: str, min_relevance: float)
     ]
     most_cited = sorted(ranked, key=lambda p: p["cited_by_count"], reverse=True)[:MOST_CITED]
     groups = [
+        ("New since the previous fetch", [p for p in ranked if p["is_new"]]),
         ("Most cited", most_cited),
         ("Competing approaches to compare against", [p for p in ranked if p["baseline"] >= BASELINE_P]),
     ]

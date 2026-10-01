@@ -1,3 +1,5 @@
+import json
+
 from conftest import RESEARCH, FakeBackend, fake_response
 
 from arxiv_atlas.classify import classify
@@ -60,3 +62,19 @@ async def test_report_groups_and_flags_baselines(papers_file, tmp_path):
     lines = (tmp_path / "ranked.csv").read_text().splitlines()
     assert lines[0].startswith("id,published,relevance")
     assert lines[1] == "p9,2019-05-01,3.6,same_problem,0.2,90,Sensors,p9,https://doi.org/10.1/9"
+
+
+async def test_new_papers_are_those_from_the_latest_fetch(papers_file, tmp_path):
+    results = await judge(papers_file, tmp_path)
+    ranked, judged = rank(papers_file, results, RESEARCH)
+    assert not any(p["is_new"] for p in ranked)  # a single fetch: nothing is "new" yet
+    assert "## New since" not in render(ranked, judged, RESEARCH, 2.0)
+
+    rows = [json.loads(line) for line in papers_file.open()]
+    for row in rows:
+        row["fetched_at"] = "2026-10-30" if row["id"] in {"p1", "p4"} else "2026-09-30"
+    papers_file.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    ranked, judged = rank(papers_file, results, RESEARCH)
+    assert [p["id"] for p in ranked if p["is_new"]] == ["p1"]  # p4 is new but below the cut-off
+    md = render(ranked, judged, RESEARCH, 2.0)
+    assert "## New since the previous fetch (1)" in md.splitlines()

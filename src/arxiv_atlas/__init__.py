@@ -10,6 +10,7 @@ from pathlib import Path
 
 DATA = Path("data")
 RESEARCH_FILE = "research.txt"
+QUERIES_FILE = "queries.txt"
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -26,7 +27,8 @@ def main(argv: list[str] | None = None) -> None:
         "--query",
         action="append",
         default=[],
-        help="a short phrase, e.g. 'road weather classification'; searched semantically and as keywords; repeatable",
+        help="a short phrase, e.g. 'road weather classification'; searched semantically and as keywords; repeatable. "
+        f"Saved to data/<topic>/{QUERIES_FILE}, so later fetches repeat every query given so far",
     )
     p.add_argument("--per-query", type=int, default=100, help="keyword results per query and sort order")
 
@@ -57,7 +59,13 @@ def main(argv: list[str] | None = None) -> None:
     if args.cmd == "fetch":
         from .fetch import fetch_candidates
 
-        n = fetch_candidates(candidates, research(), args.query, args.per_query)
+        saved = folder / QUERIES_FILE
+        old = saved.read_text().splitlines() if saved.exists() else []
+        queries = [q for q in dict.fromkeys(q.strip() for q in [*old, *args.query]) if q]
+        text = research()
+        if queries != old:
+            saved.write_text("".join(f"{q}\n" for q in queries))
+        n = fetch_candidates(candidates, text, queries, args.per_query)
         print(f"wrote {n} new candidates to {candidates}")
     elif args.cmd == "estimate":
         from .classify import estimate

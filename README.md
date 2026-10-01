@@ -32,7 +32,16 @@ uv run arxiv-atlas classify thesis --max-cost 0.5     # resumable; stops at the 
 uv run arxiv-atlas report thesis                      # data/thesis/report.md and ranked.csv
 ```
 
-Re-running `fetch` with new queries only adds unseen papers.
+Queries are saved to `data/<topic>/queries.txt`, and re-running `fetch` only adds unseen papers.
+
+## Staying up to date
+
+Re-run the pipeline every few weeks. `fetch` with no `--query` repeats every saved query, `classify` only judges
+the new candidates (cents), and `report.md` opens with **New since the previous fetch**:
+
+```sh
+uv run arxiv-atlas fetch thesis && uv run arxiv-atlas classify thesis --max-cost 0.1 && uv run arxiv-atlas report thesis
+```
 
 ## Method notes
 

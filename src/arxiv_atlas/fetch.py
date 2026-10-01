@@ -6,6 +6,7 @@ import json
 import re
 import time
 from collections.abc import Iterator
+from datetime import date
 from pathlib import Path
 
 import httpx
@@ -96,9 +97,14 @@ def fetch_candidates(
     per_query: int = 100,
     api: OpenAlexAPI | None = None,
     log=print,
+    today: date | None = None,
 ) -> int:
-    """Append candidates with an abstract to `out` (JSONL), skipping ids and titles already there."""
+    """Append candidates with an abstract to `out` (JSONL), skipping ids and titles already there.
+
+    Each new row records the day it was fetched, so a report can show what is new since the previous fetch.
+    """
     api = api or OpenAlexAPI()
+    fetched_at = (today or date.today()).isoformat()
     seen_ids, seen_titles = set(), set()
     if out.exists():
         with out.open() as f:
@@ -122,7 +128,9 @@ def fetch_candidates(
                         continue
                     seen_ids.add(paper["id"])
                     seen_titles.add(key)
-                    f.write(json.dumps({**paper, "found_by": label}, ensure_ascii=False) + "\n")
+                    f.write(
+                        json.dumps({**paper, "found_by": label, "fetched_at": fetched_at}, ensure_ascii=False) + "\n"
+                    )
                     new += 1
                 if len(papers) < size:
                     break
