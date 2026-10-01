@@ -1,14 +1,14 @@
 import json
 import time
 
-from conftest import FakeBackend
+from conftest import RESEARCH, FakeBackend
 
 from arxiv_atlas.classify import RateLimiter, classify, cost_usd, estimate, read_jsonl
-from arxiv_atlas.questions import PACK_VERSION
+from arxiv_atlas.questions import PACK_VERSION, topic_key
 
 
-async def run(papers, out, backend, **kw):
-    return await classify(papers, out, backend, rpm=60_000, concurrency=4, log=lambda *_: None, **kw)
+async def run(papers, out, backend, research=RESEARCH, **kw):
+    return await classify(papers, out, backend, research, rpm=60_000, concurrency=4, log=lambda *_: None, **kw)
 
 
 async def test_classifies_all_and_records_usage(papers_file, tmp_path):
@@ -18,6 +18,7 @@ async def test_classifies_all_and_records_usage(papers_file, tmp_path):
     assert stats["ok"] == 20 and stats["errors"] == 0 and stats["input_tokens"] == 10_000
     assert {r["id"] for r in rows} == {f"p{i}" for i in range(20)}
     assert all(r["pack"] == PACK_VERSION and r["model"] == "jev-1.13.0" for r in rows)
+    assert all(r["topic"] == topic_key(RESEARCH) for r in rows)
 
 
 async def test_resume_skips_done_and_retries_failures(papers_file, tmp_path):
@@ -32,6 +33,25 @@ async def test_resume_skips_done_and_retries_failures(papers_file, tmp_path):
     assert second["skipped_existing"] == 18 and second["ok"] == 2
     assert sorted(backend.calls) == ["p3", "p7"]
     assert len(list(read_jsonl(out))) == 20
+
+
+async def test_edited_research_is_judged_again(papers_file, tmp_path):
+    out = tmp_path / "out.jsonl"
+    await run(papers_file, out, FakeBackend(), limit=5)
+    again = await run(papers_file, out, FakeBackend(), research=RESEARCH + " We also study proteins.", limit=5)
+    assert again["skipped_existing"] == 0 and again["ok"] == 5
+
+
+async def test_research_is_sent_with_each_paper(papers_file, tmp_path):
+    states = []
+
+    class Recorder(FakeBackend):
+        async def evaluate(self, state):
+            states.append(state)
+            return await super().evaluate(state)
+
+    await run(papers_file, tmp_path / "out.jsonl", Recorder(), limit=1)
+    assert states == [{"research": RESEARCH, "title": "p0", "abstract": "Abstract 0."}]
 
 
 async def test_limit(papers_file, tmp_path):
@@ -53,10 +73,11 @@ async def test_rate_limiter_spaces_requests():
     assert time.monotonic() - start >= 0.29
 
 
-def test_estimate_is_offline_and_scales(papers_file):
-    est = estimate(papers_file, rpm=1000)
-    assert est["papers"] == 20 and est["est_tokens_per_paper"] > 500
-    assert est["projection_usd"][2_900_000] > est["projection_usd"][1_000_000]
+def test_estimate_is_offline_and_grows_with_research_length(papers_file):
+    short = estimate(papers_file, RESEARCH, rpm=1000)
+    long = estimate(papers_file, RESEARCH * 10, rpm=1000)
+    assert short["papers"] == 20 and short["est_tokens_per_paper"] > 300
+    assert long["est_tokens_per_paper"] > short["est_tokens_per_paper"]
 
 
 def test_cost():

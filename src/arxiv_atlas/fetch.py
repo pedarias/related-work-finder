@@ -1,146 +1,140 @@
-"""Stratified pilot sample from the arXiv API: a random contiguous slice of papers per month."""
+"""Candidate papers for a research topic from OpenAlex: semantic search on the description plus keyword searches."""
 
 from __future__ import annotations
 
-import calendar
 import json
-import random
 import re
 import time
-import xml.etree.ElementTree as ET
 from collections.abc import Iterator
+from datetime import date
 from pathlib import Path
 
 import httpx
 
-API_URL = "https://export.arxiv.org/api/query"
-NS = {
-    "atom": "http://www.w3.org/2005/Atom",
-    "arxiv": "http://arxiv.org/schemas/atom",
-    "opensearch": "http://a9.com/-/spec/opensearch/1.1/",
-}
-# arXiv asks API clients to wait 3 seconds between requests.
-REQUEST_DELAY_S = 3.1
-_ID_RE = re.compile(r"arxiv\.org/abs/(?P<id>.+?)(?P<version>v\d+)?$")
-
-
-def months(start: str, end: str) -> Iterator[str]:
-    """Yield YYYYMM strings from start to end inclusive."""
-    y, m = int(start[:4]), int(start[4:])
-    ey, em = int(end[:4]), int(end[4:])
-    while (y, m) <= (ey, em):
-        yield f"{y:04d}{m:02d}"
-        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+API_URL = "https://api.openalex.org/works"
+FIELDS = "id,doi,title,publication_date,cited_by_count,primary_location,abstract_inverted_index"
+# Semantic search allows 1 request per second; we use the same spacing for every request.
+REQUEST_DELAY_S = 1.1
+PAGE_SIZE = 100  # documented maximum per page
+SEMANTIC_MAX_RESULTS = 50  # semantic search returns at most 50 works
+SEMANTIC_MAX_CHARS = 2000  # longer semantic queries are truncated by OpenAlex
+KEYWORD_SORTS = ("publication_date:desc", "relevance_score:desc")  # newest matches first, then best of any age
 
 
 def _clean(text: str | None) -> str:
     return " ".join((text or "").split())
 
 
-def parse_feed(xml_text: str) -> tuple[int, list[dict]]:
-    """Return (totalResults, entries) from an arXiv Atom feed. Raises on API error entries."""
-    root = ET.fromstring(xml_text)
-    total = int(root.findtext("opensearch:totalResults", "0", NS))
-    papers = []
-    for entry in root.findall("atom:entry", NS):
-        raw_id = entry.findtext("atom:id", "", NS)
-        if raw_id.endswith("/api/errors"):
-            raise RuntimeError(f"arXiv API error: {_clean(entry.findtext('atom:summary', '', NS))}")
-        match = _ID_RE.search(raw_id)
-        primary = entry.find("arxiv:primary_category", NS)
-        papers.append(
-            {
-                "id": match["id"] if match else raw_id,
-                "version": (match["version"] if match else None) or "v1",
-                "title": _clean(entry.findtext("atom:title", "", NS)),
-                "abstract": _clean(entry.findtext("atom:summary", "", NS)),
-                "published": entry.findtext("atom:published", "", NS),
-                "primary_category": primary.get("term") if primary is not None else None,
-                "categories": [c.get("term") for c in entry.findall("atom:category", NS)],
-                "comment": _clean(entry.findtext("arxiv:comment", "", NS)) or None,
-            }
-        )
-    return total, papers
+def title_key(title: str) -> str:
+    """Normalized title, to drop the same paper indexed twice (preprint and journal version, duplicates)."""
+    return " ".join(re.sub(r"[\W_]+", " ", title.lower()).split())
 
 
-class ArxivAPI:
+def abstract_text(inverted: dict[str, list[int]] | None) -> str:
+    """OpenAlex stores abstracts as {word: [positions]}; rebuild the plain text."""
+    words = {pos: word for word, positions in (inverted or {}).items() for pos in positions}
+    return " ".join(words[i] for i in sorted(words))
+
+
+def parse_work(work: dict) -> dict:
+    source = (work.get("primary_location") or {}).get("source") or {}
+    return {
+        "id": work["id"].rsplit("/", 1)[-1],
+        "title": _clean(work.get("title")),
+        "abstract": _clean(abstract_text(work.get("abstract_inverted_index"))),
+        "published": work.get("publication_date") or "",
+        "venue": source.get("display_name"),
+        "cited_by_count": work.get("cited_by_count") or 0,
+        "url": work.get("doi") or work["id"],
+    }
+
+
+class OpenAlexAPI:
     def __init__(self, client: httpx.Client | None = None, delay_s: float = REQUEST_DELAY_S):
         self.client = client or httpx.Client(timeout=60, headers={"User-Agent": "arxiv-atlas/0.1"})
         self.delay_s = delay_s
         self._last = 0.0
 
-    def query(self, search_query: str, start: int, max_results: int, attempts: int = 4) -> tuple[int, list[dict]]:
+    def works(self, params: dict, attempts: int = 4) -> tuple[int, list[dict]]:
+        """Return (total matches, parsed works). Retries server errors and rate limits, not bad queries."""
         for attempt in range(attempts):
             wait = self._last + self.delay_s - time.monotonic()
             if wait > 0:
                 time.sleep(wait)
             self._last = time.monotonic()
             try:
-                resp = self.client.get(
-                    API_URL,
-                    params={"search_query": search_query, "start": start, "max_results": max_results},
-                )
+                resp = self.client.get(API_URL, params={**params, "select": FIELDS})
                 resp.raise_for_status()
-                return parse_feed(resp.text)
-            except (httpx.HTTPError, RuntimeError, ET.ParseError):
+                data = resp.json()
+                return data["meta"]["count"], [parse_work(w) for w in data["results"]]
+            except httpx.HTTPStatusError as exc:
+                status = exc.response.status_code
+                if (status < 500 and status != 429) or attempt == attempts - 1:
+                    raise RuntimeError(f"OpenAlex HTTP {status}: {exc.response.text[:300]}") from None
+            except httpx.HTTPError:
                 if attempt == attempts - 1:
                     raise
-                time.sleep(self.delay_s * 2 ** (attempt + 1))
+            time.sleep(self.delay_s * 2 ** (attempt + 1))
         raise AssertionError("unreachable")
 
 
-def month_query(category: str, month: str) -> str:
-    last_day = calendar.monthrange(int(month[:4]), int(month[4:]))[1]
-    return f"cat:{category} AND submittedDate:[{month}010000 TO {month}{last_day:02d}2359]"
+def searches(research: str, queries: list[str], per_query: int) -> Iterator[tuple[str, dict, int]]:
+    """(label, params, max results) for every search: the description and each query semantically, each query
+    as keywords in titles and abstracts, sorted by newest and by relevance."""
+    yield "description (semantic)", {"search.semantic": research[:SEMANTIC_MAX_CHARS]}, SEMANTIC_MAX_RESULTS
+    for q in queries:
+        yield f"{q!r} (semantic)", {"search.semantic": q}, SEMANTIC_MAX_RESULTS
+        for sort in KEYWORD_SORTS:
+            label = f"{q!r} (keywords, by {sort.split('_')[0]})"
+            # Commas separate OpenAlex filters, so they cannot appear inside the search text.
+            yield label, {"filter": f"title_and_abstract.search:{q.replace(',', ' ')}", "sort": sort}, per_query
 
 
-def sample_month(
-    api: ArxivAPI, category: str, month: str, per_month: int, rng: random.Random, total_hint: int | None
-) -> tuple[int, list[dict]]:
-    """Fetch a random contiguous slice of `per_month` papers submitted in `month`. Returns (total, papers).
-
-    `total_hint` (usually the previous month's total) lets us pick the offset without a separate count
-    request; if the guess overshoots, the response reports the real total and we retry once.
-    """
-    query = month_query(category, month)
-    if total_hint is None:
-        total_hint, _ = api.query(query, 0, 1)
-    offset = rng.randint(0, max(0, total_hint - per_month))
-    total, papers = api.query(query, offset, per_month)
-    if not papers and total > 0:
-        offset = rng.randint(0, max(0, total - per_month))
-        total, papers = api.query(query, offset, per_month)
-    for paper in papers:
-        paper["sample_month"] = month
-        paper["month_total"] = total
-    return total, papers
-
-
-def fetch_sample(
-    out: Path, category: str, start: str, end: str, per_month: int, seed: int, api: ArxivAPI | None = None, log=print
+def fetch_candidates(
+    out: Path,
+    research: str,
+    queries: list[str],
+    per_query: int = 100,
+    api: OpenAlexAPI | None = None,
+    log=print,
+    today: date | None = None,
 ) -> int:
-    """Append a stratified sample to `out` (JSONL). Resumable: months already present are skipped."""
-    api = api or ArxivAPI()
-    done: dict[str, int] = {}
+    """Append candidates with an abstract to `out` (JSONL), skipping ids and titles already there.
+
+    Each new row records the day it was fetched, so a report can show what is new since the previous fetch.
+    """
+    api = api or OpenAlexAPI()
+    fetched_at = (today or date.today()).isoformat()
+    seen_ids, seen_titles = set(), set()
     if out.exists():
         with out.open() as f:
             for line in f:
-                row = json.loads(line)
-                done[row["sample_month"]] = row["month_total"]
+                if line.strip():
+                    row = json.loads(line)
+                    seen_ids.add(row["id"])
+                    seen_titles.add(title_key(row["title"]))
     out.parent.mkdir(parents=True, exist_ok=True)
-    written, hint = 0, None
+    written = 0
     with out.open("a") as f:
-        for month in months(start, end):
-            if month in done:
-                hint = done[month]
-                continue
-            hint, papers = sample_month(api, category, month, per_month, random.Random(f"{seed}-{month}"), hint)
-            seen = set()
-            for paper in papers:
-                if paper["id"] not in seen and paper["abstract"]:
-                    seen.add(paper["id"])
-                    f.write(json.dumps(paper, ensure_ascii=False) + "\n")
+        for label, params, limit in searches(research, queries, per_query):
+            params["filter"] = ",".join(filter(None, [params.get("filter"), "has_abstract:true"]))
+            new = total = 0
+            for page in range(1, -(-limit // PAGE_SIZE) + 1):
+                size = min(PAGE_SIZE, limit - (page - 1) * PAGE_SIZE)
+                total, papers = api.works({**params, "per-page": size, "page": page})
+                for paper in papers:
+                    key = title_key(paper["title"])
+                    if paper["id"] in seen_ids or key in seen_titles or not paper["abstract"]:
+                        continue
+                    seen_ids.add(paper["id"])
+                    seen_titles.add(key)
+                    f.write(
+                        json.dumps({**paper, "found_by": label, "fetched_at": fetched_at}, ensure_ascii=False) + "\n"
+                    )
+                    new += 1
+                if len(papers) < size:
+                    break
             f.flush()
-            written += len(seen)
-            log(f"{month}: {len(seen)} papers (month total {hint}) — {written} written this run")
+            written += new
+            log(f"{label}: {new} new ({total} matches)")
     return written

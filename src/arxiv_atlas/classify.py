@@ -1,4 +1,4 @@
-"""Resumable, rate-limited, budget-capped classification of papers with Jev."""
+"""Resumable, rate-limited, budget-capped judging of candidate papers against one research description."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Protocol
 
-from .questions import PACK_VERSION, QUESTIONS, build_state, request_json
+from .questions import PACK_VERSION, QUESTIONS, build_state, request_json, topic_key
 
 PRICE_PER_MTOK = 0.042  # USD per million input tokens, jev-1.13.0; output is free.
 DEFAULT_MODEL = "jev-1.13.0"
@@ -68,19 +68,18 @@ def cost_usd(tokens: int) -> float:
     return tokens * PRICE_PER_MTOK / 1_000_000
 
 
-def estimate(papers_path: Path, rpm: float) -> dict:
+def estimate(papers_path: Path, research: str, rpm: float) -> dict:
     """Pre-flight estimate from request size; no API calls."""
     n, chars = 0, 0
     for paper in read_jsonl(papers_path):
         n += 1
-        chars += len(request_json(paper))
+        chars += len(request_json(paper, research))
     tokens_per_paper = chars / max(n, 1) / CHARS_PER_TOKEN
     return {
         "papers": n,
         "est_tokens_per_paper": round(tokens_per_paper),
         "est_cost_usd": round(cost_usd(tokens_per_paper * n), 2),
-        "est_hours": round(n / rpm / 60, 2),
-        "projection_usd": {size: round(cost_usd(tokens_per_paper * size), 2) for size in (1_000_000, 2_900_000)},
+        "est_minutes": round(n / rpm, 1),
     }
 
 
@@ -88,6 +87,7 @@ async def classify(
     papers_path: Path,
     out_path: Path,
     backend: Backend,
+    research: str,
     *,
     rpm: float = 1000,
     concurrency: int = 32,
@@ -96,8 +96,9 @@ async def classify(
     log=print,
     progress_every_s: float = 15.0,
 ) -> dict:
-    """Classify every paper not already in `out_path`. Safe to interrupt and re-run."""
-    done = {row["id"] for row in read_jsonl(out_path)}
+    """Judge every paper not yet judged for this research description and pack. Safe to interrupt and re-run."""
+    topic = topic_key(research)
+    done = {row["id"] for row in read_jsonl(out_path) if row.get("pack") == PACK_VERSION and row.get("topic") == topic}
     errors_path = out_path.with_suffix(".errors.jsonl")
     todo = (p for p in read_jsonl(papers_path) if p["id"] not in done)
     if limit is not None:
@@ -125,7 +126,7 @@ async def classify(
                     return
                 await limiter.wait()
                 try:
-                    response = await backend.evaluate(build_state(paper))
+                    response = await backend.evaluate(build_state(paper, research))
                 except Exception as exc:  # recorded and retried on the next run
                     stats["errors"] += 1
                     err.write(json.dumps({"id": paper["id"], "error": f"{type(exc).__name__}: {exc}"}) + "\n")
@@ -134,7 +135,7 @@ async def classify(
                 tokens = (response.get("usage") or {}).get("input_tokens") or 0
                 stats["ok"] += 1
                 stats["input_tokens"] += tokens
-                out.write(json.dumps({"id": paper["id"], "pack": PACK_VERSION, **response}) + "\n")
+                out.write(json.dumps({"id": paper["id"], "pack": PACK_VERSION, "topic": topic, **response}) + "\n")
                 out.flush()
                 if max_cost_usd is not None and cost_usd(stats["input_tokens"]) >= max_cost_usd:
                     stats["stopped_on_budget"] = True
