@@ -3,8 +3,8 @@ import time
 
 from conftest import RESEARCH, FakeBackend
 
-from arxiv_atlas.classify import RateLimiter, classify, cost_usd, estimate, read_jsonl
-from arxiv_atlas.questions import PACK_VERSION, topic_key
+from related_work_finder.classify import RateLimiter, classify, cost_usd, estimate, read_jsonl
+from related_work_finder.questions import PACK_VERSION, topic_key
 
 
 async def run(papers, out, backend, research=RESEARCH, **kw):

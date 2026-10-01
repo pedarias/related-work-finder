@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from arxiv_atlas.questions import QUESTIONS
+from related_work_finder.questions import QUESTIONS
 
 RESEARCH = "We predict molecular properties with graph neural networks."
 

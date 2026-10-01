@@ -1,8 +1,8 @@
-# arxiv-atlas
+# related-work-finder
 
 Find the related work for your research, judged by a decision model.
 
-Describe your research in a few sentences. arxiv-atlas collects candidates from
+Describe your research in a few sentences. related-work-finder collects candidates from
 [OpenAlex](https://openalex.org) (journals, conferences, and preprints, with citation counts), then TypeSafe's
 [Jev](https://docs.typesafe.ai) (`jev-1.13.0`) reads every candidate abstract next to your description and
 answers three typed questions:
@@ -14,7 +14,7 @@ answers three typed questions:
 | `baseline` | noul | A competing method you should compare against or discuss |
 
 The output is `report.md`: most related first, **newest first within each half-point band**, grouped by relation, plus
-the most cited papers and a list of competing approaches. Wording lives in `src/arxiv_atlas/questions.py`; any
+the most cited papers and a list of competing approaches. Wording lives in `src/related_work_finder/questions.py`; any
 change bumps `PACK_VERSION`, and editing your description re-judges everything, so results never mix.
 
 > Status: early. Judgements read **abstracts** only; papers without an abstract in OpenAlex are skipped.
@@ -25,11 +25,11 @@ change bumps `PACK_VERSION`, and editing your description re-judges everything, 
 uv sync
 mkdir -p data/thesis
 $EDITOR data/thesis/research.txt                      # 3–5 sentences: problem, method, data
-uv run arxiv-atlas fetch thesis --query "road weather classification" --query "BDD100K"
-uv run arxiv-atlas estimate thesis                    # offline token / cost estimate
+uv run related-work-finder fetch thesis --query "road weather classification" --query "BDD100K"
+uv run related-work-finder estimate thesis                    # offline token / cost estimate
 export TYPESAFE_API_KEY=...                           # set in your own shell; never commit it
-uv run arxiv-atlas classify thesis --max-cost 0.5     # resumable; stops at the budget cap
-uv run arxiv-atlas report thesis                      # data/thesis/report.md and ranked.csv
+uv run related-work-finder classify thesis --max-cost 0.5     # resumable; stops at the budget cap
+uv run related-work-finder report thesis                      # data/thesis/report.md and ranked.csv
 ```
 
 Queries are saved to `data/<topic>/queries.txt`, and re-running `fetch` only adds unseen papers.
@@ -40,7 +40,9 @@ Re-run the pipeline every few weeks. `fetch` with no `--query` repeats every sav
 the new candidates (cents), and `report.md` opens with **New since the previous fetch**:
 
 ```sh
-uv run arxiv-atlas fetch thesis && uv run arxiv-atlas classify thesis --max-cost 0.1 && uv run arxiv-atlas report thesis
+uv run related-work-finder fetch thesis &&
+  uv run related-work-finder classify thesis --max-cost 0.1 &&
+  uv run related-work-finder report thesis
 ```
 
 ## Method notes
@@ -61,3 +63,7 @@ uv run arxiv-atlas fetch thesis && uv run arxiv-atlas classify thesis --max-cost
 ```sh
 uv run pytest && uv run ruff check . && uv run ruff format --check .
 ```
+
+## License
+
+[MIT](LICENSE)

@@ -4,7 +4,7 @@ from datetime import date
 import httpx
 import pytest
 
-from arxiv_atlas.fetch import OpenAlexAPI, abstract_text, fetch_candidates, parse_work, title_key
+from related_work_finder.fetch import OpenAlexAPI, abstract_text, fetch_candidates, parse_work, title_key
 
 WORK = {
     "id": "https://openalex.org/W4315647870",

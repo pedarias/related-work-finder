@@ -2,8 +2,8 @@ import json
 
 from conftest import RESEARCH, FakeBackend, fake_response
 
-from arxiv_atlas.classify import classify
-from arxiv_atlas.report import rank, render, write_csv
+from related_work_finder.classify import classify
+from related_work_finder.report import rank, render, write_csv
 
 # id -> (relevance, relation, baseline probability); papers not listed are unrelated.
 JUDGEMENTS = {
