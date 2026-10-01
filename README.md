@@ -24,12 +24,12 @@ change bumps `PACK_VERSION`, and editing your description re-judges everything, 
 ```sh
 uv sync
 mkdir -p data/thesis
-$EDITOR data/thesis/research.txt                      # 3–5 sentences: problem, method, data
+$EDITOR data/thesis/research.txt                           # 3–5 sentences: problem, method, data
 uv run related-work-finder fetch thesis --query "road weather classification" --query "BDD100K"
-uv run related-work-finder estimate thesis                    # offline token / cost estimate
-export TYPESAFE_API_KEY=...                           # set in your own shell; never commit it
-uv run related-work-finder classify thesis --max-cost 0.5     # resumable; stops at the budget cap
-uv run related-work-finder report thesis                      # data/thesis/report.md and ranked.csv
+uv run related-work-finder estimate thesis                 # offline token / cost estimate
+export TYPESAFE_API_KEY=...                                # set in your own shell; never commit it
+uv run related-work-finder classify thesis --max-cost 0.5  # resumable; stops at the budget cap
+uv run related-work-finder report thesis                   # data/thesis/report.md and ranked.csv
 ```
 
 Queries are saved to `data/<topic>/queries.txt`, and re-running `fetch` only adds unseen papers.
