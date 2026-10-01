@@ -1,5 +1,5 @@
 [project]
-name = "arxiv-atlas"
+name = "related-work-finder"
 version = "0.1.0"
 description = "Find the related work for your research: OpenAlex search, judged by a decision model"
 readme = "README.md"
@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-arxiv-atlas = "arxiv_atlas:main"
+related-work-finder = "related_work_finder:main"
 
 [build-system]
 requires = ["uv_build>=0.8.15,<0.9.0"]

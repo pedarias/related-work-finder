@@ -1,4 +1,4 @@
-"""arxiv-atlas: find the related work for your research, judged by a decision model."""
+"""related-work-finder: find the related work for your research, judged by a decision model."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ QUERIES_FILE = "queries.txt"
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(prog="arxiv-atlas")
+    parser = argparse.ArgumentParser(prog="related-work-finder")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     def topic_parser(name: str, summary: str) -> argparse.ArgumentParser:

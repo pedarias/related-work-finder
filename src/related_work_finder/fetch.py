@@ -51,7 +51,7 @@ def parse_work(work: dict) -> dict:
 
 class OpenAlexAPI:
     def __init__(self, client: httpx.Client | None = None, delay_s: float = REQUEST_DELAY_S):
-        self.client = client or httpx.Client(timeout=60, headers={"User-Agent": "arxiv-atlas/0.1"})
+        self.client = client or httpx.Client(timeout=60, headers={"User-Agent": "related-work-finder/0.1"})
         self.delay_s = delay_s
         self._last = 0.0
 
