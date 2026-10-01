@@ -1,8 +1,10 @@
 [project]
 name = "arxiv-atlas"
 version = "0.1.0"
-description = "Add your description here"
+description = "Find the related work for your research: OpenAlex search, judged by a decision model"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "Pedro Arias", email = "pedroarias92@gmail.com" }
 ]

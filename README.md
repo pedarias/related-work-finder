@@ -61,3 +61,7 @@ uv run arxiv-atlas fetch thesis && uv run arxiv-atlas classify thesis --max-cost
 ```sh
 uv run pytest && uv run ruff check . && uv run ruff format --check .
 ```
+
+## License
+
+[MIT](LICENSE)
