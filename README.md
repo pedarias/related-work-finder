@@ -2,6 +2,8 @@
 
 Find the related work for your research, judged by a decision model.
 
+![Describe your research, find candidates on OpenAlex, judge each one, get a ranked report](docs/demo.gif)
+
 Describe your research in a few sentences. related-work-finder collects candidates from
 [OpenAlex](https://openalex.org) (journals, conferences, and preprints, with citation counts), then TypeSafe's
 [Jev](https://docs.typesafe.ai) (`jev-1.13.0`) reads every candidate abstract next to your description and
